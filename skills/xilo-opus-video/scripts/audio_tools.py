@@ -5,6 +5,11 @@ and draw waveform/spectrum images so the model can check audio it cannot hear.
   sfx:        audio_tools.py sfx timeline.json audio/sfx.wav
   normalize:  audio_tools.py normalize audio/mix.wav audio/mix_norm.wav      (-14 LUFS, -1 dBTP)
   check:      audio_tools.py check audio/mix_norm.wav --out qa/audio
+  beats:      audio_tools.py beats music.mp3 > audio/beats.json     (measure a supplied track)
+
+beats.json: {"bpm": 120.0, "beats": [...], "downbeats": [...], "hits": [...]}
+  beats = where state changes go, downbeats = where the big moments go, hits = where SFX go.
+  Uses librosa when installed, otherwise a numpy-only tracker (fine for steady-tempo music).
 
 timeline.json:
   {"duration": 12, "bpm": 120, "beat": "kick",            # optional soft pulse on every beat
@@ -97,9 +102,69 @@ def cmd_check(a):
     print(f"images: {a.out}-wave.png, {a.out}-spectrum.png  (look for clipping, silence gaps, low-frequency rumble)")
 
 
+def load_mono(path, sr=22050):
+    raw = subprocess.run(["ffmpeg", "-v", "error", "-i", path, "-ac", "1", "-ar", str(sr), "-f", "f32le", "-"], capture_output=True).stdout
+    return np.frombuffer(raw, dtype=np.float32), sr
+
+
+def beats_numpy(y, sr):
+    hop, n_fft = 256, 1024
+    frames = 1 + (len(y) - n_fft) // hop
+    win = np.hanning(n_fft)
+    spec = np.abs(np.fft.rfft(np.stack([y[i * hop:i * hop + n_fft] * win for i in range(frames)]), axis=1))
+    flux = np.maximum(0, np.diff(np.log1p(spec), axis=0)).sum(axis=1)
+    onset = np.concatenate([[0], flux]); onset = (onset - onset.mean()) / (onset.std() + 1e-9)
+    fps = sr / hop
+    # tempo: autocorrelation of the onset envelope, 60-180 BPM, mild preference around 120,
+    # refined to a fractional period so the grid does not drift over long tracks
+    ac = np.correlate(onset, onset, mode="full")[len(onset) - 1:]
+    lags = np.arange(int(fps * 60 / 180), int(fps * 60 / 60) + 1)
+    score = ac[lags] * np.exp(-0.5 * (np.log2(60 * fps / lags / 120) / 0.9) ** 2)
+    i = int(np.argmax(score)); period = float(lags[i])
+    if 0 < i < len(score) - 1:
+        l, c, r = score[i - 1], score[i], score[i + 1]
+        period += 0.5 * (l - r) / (l - 2 * c + r) if (l - 2 * c + r) != 0 else 0
+    n = len(onset)
+    grid = lambda o: [int(round(o + k * period)) for k in range(int((n - o) / period) + 1) if round(o + k * period) < n]
+    phase = max(range(int(period)), key=lambda o: onset[grid(o)].sum())
+    # track: predict the next beat from the previous one, snap to a strong onset nearby
+    beats, t, w = [], float(phase), max(2, int(period * 0.12))
+    while t < n:
+        c = int(round(t)); lo, hi = max(0, c - w), min(n, c + w + 1)
+        j = lo + int(np.argmax(onset[lo:hi]))
+        pos = j if onset[j] > 0.5 else c
+        beats.append(pos); t = pos + period
+    lag = n_fft / 2 / sr                       # frame index -> time at the window centre
+    beat_t = np.array(beats) / fps + lag
+    down0 = max(range(4), key=lambda k: onset[beats[k::4]].sum()) if len(beats) >= 4 else 0
+    peaks = [i for i in range(1, n - 1) if onset[i] > 2 and onset[i] >= onset[i - 1] and onset[i] >= onset[i + 1]]
+    hits, last = [], -10**9
+    for i in peaks:
+        if i - last > fps * 0.1: hits.append(i / fps + lag); last = i
+    return 60 * fps / period, beat_t.tolist(), beat_t[down0::4].tolist(), hits
+
+
+def cmd_beats(a):
+    try:
+        import librosa
+        y, sr = librosa.load(a.inp, sr=None, mono=True)
+        tempo, fr = librosa.beat.beat_track(y=y, sr=sr, units="frames")
+        beats = librosa.frames_to_time(fr, sr=sr).tolist()
+        env_ = librosa.onset.onset_strength(y=y, sr=sr)
+        pk = librosa.util.peak_pick(env_, pre_max=3, post_max=3, pre_avg=3, post_avg=5, delta=0.5, wait=10)
+        bpm, downs, hits = float(np.atleast_1d(tempo)[0]), beats[::4], librosa.frames_to_time(pk, sr=sr).tolist()
+    except ImportError:
+        y, sr = load_mono(a.inp)
+        bpm, beats, downs, hits = beats_numpy(y, sr)
+    r = lambda xs: [round(x, 3) for x in xs]
+    json.dump({"bpm": round(bpm, 2), "beats": r(beats), "downbeats": r(downs), "hits": r(hits)}, sys.stdout, indent=1)
+    print(f"\nbpm {bpm:.1f}, {len(beats)} beats, {len(hits)} hits", file=sys.stderr)
+
+
 ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
 sp = ap.add_subparsers(dest="cmd", required=True)
 p = sp.add_parser("sfx"); p.add_argument("timeline"); p.add_argument("out"); p.set_defaults(fn=cmd_sfx)
 p = sp.add_parser("normalize"); p.add_argument("inp"); p.add_argument("out"); p.set_defaults(fn=cmd_normalize)
 p = sp.add_parser("check"); p.add_argument("inp"); p.add_argument("--out", required=True); p.set_defaults(fn=cmd_check)
+p = sp.add_parser("beats"); p.add_argument("inp"); p.set_defaults(fn=cmd_beats)
 args = ap.parse_args(); args.fn(args)

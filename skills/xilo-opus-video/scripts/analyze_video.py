@@ -5,6 +5,7 @@ and optional single frames. Works for reference videos and for checking your own
   analyze_video.py ref.mp4 --out source/ref            # sheet + scenes + info
   analyze_video.py out/final.mp4 --out qa/final --cells 30
   analyze_video.py ref.mp4 --out source/ref --frames 1.5 4 9.2   # also export these seconds as PNG
+  analyze_video.py out/final.mp4 --out qa/phone --cells 15 --cell-width 360   # phone-size readability test
 
 Writes <out>-sheet.png, <out>-info.txt and prints the same summary.
 The contact sheet is read left-to-right, top-to-bottom; cell k is at k * step seconds.
@@ -22,6 +23,7 @@ def main():
     ap.add_argument("--cells", type=int, default=20, help="frames in the contact sheet")
     ap.add_argument("--scene", type=float, default=0.3, help="shot-change threshold (0-1)")
     ap.add_argument("--frames", type=float, nargs="*", default=[], help="seconds to export as full-size PNG")
+    ap.add_argument("--cell-width", type=int, help="width of each sheet cell; 360 = phone test")
     a = ap.parse_args()
     out = pathlib.Path(a.out); out.parent.mkdir(parents=True, exist_ok=True)
 
@@ -35,7 +37,7 @@ def main():
     cols = 5 if a.cells > 12 else 4
     rows = -(-a.cells // cols)
     step = dur / a.cells
-    width = 1600 // cols
+    width = a.cell_width or 1600 // cols
     sheet = f"{out}-sheet.png"
     run(["ffmpeg", "-v", "error", "-y", "-i", a.video, "-vf", f"fps={a.cells}/{dur},scale={width}:-2,tile={cols}x{rows}", "-frames:v", "1", sheet])
 

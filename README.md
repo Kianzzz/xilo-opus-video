@@ -125,12 +125,12 @@ skills/xilo-opus-video/
     code-stack.md             八种代码各自擅长什么，风格和技术组合怎么对应
     plan-format.md            三个方案的写法和预览规则
     brief-template.md         七块结构的提示词模板
-    craft-rules.md            画面只由时间决定、弹簧和节拍、声音、验收清单
+    craft-rules.md            画面只由时间决定、弹簧分档、多画幅、声音、自检打分、验收清单
   scripts/
     check_env.py              检查 Python / FFmpeg / Playwright / 浏览器 / WebGL
     render.py                 逐帧渲染：单帧预览、整片、只渲一段、运动模糊、混音
     analyze_video.py          视频信息、镜头切换时间点、抽帧拼图（参考视频分析和成片验收都用它）
-    audio_tools.py            按时间表合成音效、响度标准化、波形和频谱图
+    audio_tools.py            按时间表合成音效、测音乐节拍、响度标准化、波形和频谱图
 ```
 
 ---

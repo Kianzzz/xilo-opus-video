@@ -45,6 +45,8 @@ opus-video/<slug>/
 - **原内容**：文章、口播稿、产品网址、产品代码库、数据表
 - **参考视频**：本地文件或链接
 
+用户给了现成的音乐时，先运行 `python3 scripts/audio_tools.py beats <音乐文件> > source/beats.json` 测出节拍、重拍和鼓点，方案和分镜都按这张节拍表来排。
+
 只追问会改变方案的信息，一次最多问 3 个：时长、画幅（16:9 / 9:16 / 1:1）、要不要配音、有没有指定的品牌色或字体。用户没说的用合理默认值（30 秒、1920×1080、30fps、代码合成配乐、不配音），在方案里写明，让用户改。
 
 处理原材料：
@@ -84,7 +86,7 @@ opus-video/<slug>/
 制作规则在 [references/craft-rules.md](references/craft-rules.md)，动手前把整份读完。最要紧的几条：
 
 1. **画面只由时间决定**。`window.render(t)` 画出第 t 秒；不用 `requestAnimationFrame`、`setTimeout`、CSS transition，随机数带固定种子，帧和帧之间不保存状态。这样任何一帧都能单独重渲，改一个镜头不会影响别的镜头。
-2. **一个镜头一个镜头做**。每做完一个镜头，用 `render.py --still` 渲 3 张静帧，自己看：文字有没有溢出、元素有没有重叠、主体够不够大、字停留够不够久。修好再做下一个。
+2. **一个镜头一个镜头做**。每做完一个镜头，用 `render.py --still` 渲 3 张静帧，自己看：文字有没有溢出、元素有没有重叠、主体够不够大、字停留够不够久。修好再做下一个。30 秒以上的片子，所有镜头搭完后先渲一版 960×540、不加运动模糊的低清小样，节奏和转场对了再精修，精修前别花时间在细节上。
 3. **声音和画面用同一张时间表**。先定节拍网格或旁白时间轴，镜头切换和关键动作落在上面；音效放在画面动作发生的那一帧。配音整段合成，不要一句一句拼。
 4. **镜头要动**。推、拉、跟随，让主体在画面里足够大；brief 没写镜头的时候，Opus 默认会固定机位，画面容易显得空。
 
@@ -94,7 +96,7 @@ opus-video/<slug>/
 
 - 渲染：`python3 scripts/render.py index.html out/video.mp4 --size 1920x1080 --fps 30 --duration 30 --audio audio/mix.wav`，要运动模糊加 `--subframes 4`（渲染时间也会变成 4 倍，先告诉用户）。
 - 声音：音效用 `python3 scripts/audio_tools.py sfx timeline.json audio/sfx.wav` 按时间点合成，混好后 `audio_tools.py normalize` 到 -14 LUFS，再用 `audio_tools.py check audio/mix.wav --out qa/audio` 看响度和波形图。
-- 验收：`python3 scripts/analyze_video.py out/final.mp4 --out qa/final` 出抽帧图，逐格看一遍，再对照 craft-rules.md 的验收清单核对。
+- 验收：`python3 scripts/analyze_video.py out/final.mp4 --out qa/final` 出抽帧图，再加一张手机尺寸的（`--cell-width 360`）。按 craft-rules.md 的「自检打分」给自己打分，列出最严重的 3 个问题和时间点，改完只重渲那几秒，重复到每项 8 分以上，再对照验收清单核对。把每一轮的分数和问题记在 `qa/review_log.md` 里，交付时一起给用户。
 - 有问题就回到对应镜头修，只重渲那一段也可以（`--start` / `--duration`），最后再整片合成。
 
 ## 交付
